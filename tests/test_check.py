@@ -53,3 +53,15 @@ def test_actors_in_each_job_namespace_are_not_reported(cluster):
     assert report.exit_codes == {"a": 0, "b": 0}
     assert report.findings == []
     assert len(report.actors["a"]) == len(report.actors["b"]) == 1
+
+
+def test_file_held_open_by_both_runs_is_reported(cluster):
+    report = run_check([sys.executable, str(EXAMPLES / "fixed_path_job.py")], *cluster, timeout_s=120)
+    assert report.exit_codes == {"a": 0, "b": 0}
+    assert [f.kind for f in report.findings] == ["shared_path"]
+    assert report.findings[0].detail.endswith("isolation-check-demo/state.lock was held open by both runs")
+
+
+def test_unreachable_state_api_fails_with_a_clear_message():
+    with pytest.raises(RuntimeError, match="cannot reach the Ray state API"):
+        run_check([sys.executable, "-c", "pass"], "127.0.0.1:1", f"http://127.0.0.1:{_free_port()}")

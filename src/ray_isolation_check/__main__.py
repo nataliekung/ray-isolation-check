@@ -19,7 +19,11 @@ def main() -> int:
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("give the job command after --")
-    report = run_check(command, args.address, args.dashboard, timeout_s=args.timeout)
+    try:
+        report = run_check(command, args.address, args.dashboard, timeout_s=args.timeout)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     print_report(report)
     return 1 if report.findings or any(report.exit_codes.values()) else 0
 

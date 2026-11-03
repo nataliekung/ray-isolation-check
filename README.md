@@ -1,6 +1,6 @@
 # ray-isolation-check
 
-Runs one job command twice at the same time against one Ray cluster and reports named actors that the two runs share.
+Runs one job command twice at the same time against one Ray cluster and reports named actors and temp files that the two runs share.
 
 Libraries that create Ray named actors in a namespace they pick themselves make concurrent jobs attach to each other's actors. A test that runs one job at a time does not see it. [TransferQueue#206](https://github.com/Ascend/TransferQueue/pull/206) fixed one such case: two training jobs on one cluster shared one queue controller, read each other's data, and the first job's shutdown removed the second job's queue.
 
@@ -10,6 +10,7 @@ Both runs execute the same command, so each should create the same named actors.
 
 - **SHARED**: an actor name created by only one of the two runs. The other run attached to it, or failed before creating it; the exit codes tell which.
 - **COLLISION**: both runs created the same name in the same namespace. Ray normally refuses this, so it points at a race or a detached actor left from earlier.
+- **SHARED_PATH**: a file under a watched root (the system temp dir, `/tmp`, `/dev/shm`) that processes of both runs held open: the driver, its children, and the run's actors. A fixed checkpoint or state directory under `/tmp` shows up here. Ray's own session directory is skipped.
 
 Each run gets `RAY_ADDRESS` and `ISOLATION_CHECK_RUN=a` or `b`, so a job can derive a per-run setting from it. The second run starts one second after the first, to avoid a race in `ray.init()` when two drivers start at the same instant; the jobs still overlap.
 
@@ -21,7 +22,7 @@ ray start --head
 ray-isolation-check --address 127.0.0.1:6379 --dashboard http://127.0.0.1:8265 -- python my_job.py
 ```
 
-The exit status is 1 when a finding is reported or either run fails.
+The exit status is 1 when a finding is reported or either run fails, and 2 when the Ray state API cannot be reached. The state API is served by the Ray dashboard, so the head must run with it (`ray start --head` from a `ray[default]` install).
 
 ## Example: TransferQueue
 
@@ -37,12 +38,12 @@ SHARED: named actor 'TransferQueueStorageUnit#0' in namespace abec29f9-... was c
 $ ray-isolation-check ... -- sh -c 'TQ_RAY_NAMESPACE=queue-$ISOLATION_CHECK_RUN exec python examples/transferqueue_job.py'
 run a: exit 0, named actors: ['0de1b8ad-.../TransferQueueStorageUnit#0', 'queue-a/TransferQueueController']
 run b: exit 0, named actors: ['99656c8e-.../TransferQueueStorageUnit#0', 'queue-b/TransferQueueController']
-no shared named actors found
+no shared named actors or files found
 ```
 
 Both runs exit 0 with the default, which is why the problem is easy to miss: run b silently uses run a's controller and storage. With a namespace per run, each creates its own.
 
-The two smaller examples, `fixed_namespace_job.py` and `job_namespace_job.py`, show the same pattern without TransferQueue and are what the tests run.
+The smaller examples are what the tests run: `fixed_namespace_job.py` and `job_namespace_job.py` show the actor pattern without TransferQueue, and `fixed_path_job.py` keeps its state in a fixed temp directory.
 
 When the cluster's workers import the library from a source checkout, start `ray start` with the same `PYTHONPATH` as the jobs, or the workers load a different version than the drivers.
 
@@ -57,8 +58,8 @@ The tests start their own Ray head on free ports.
 
 ## Limits
 
-- Only named actors. Shared temporary paths, fixed ports and checkpoint directories are the same class of problem and are not checked yet.
-- Actors that live shorter than the poll interval (0.5 s) can be missed.
+- Files are seen only while a process holds them open at a poll. A checkpoint written and closed between two polls is missed; fixed ports are not checked.
+- Actors and open files that live shorter than the poll interval (0.5 s) can be missed.
 - A job whose actor set depends on timing or input can show a difference that is not sharing; the report says what was seen and leaves that judgment to the reader.
 
 ## License
