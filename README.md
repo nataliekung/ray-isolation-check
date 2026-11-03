@@ -30,18 +30,22 @@ The exit status is 1 when a finding is reported or either run fails, and 2 when 
 
 ```
 $ ray-isolation-check --address 127.0.0.1:6393 --dashboard http://127.0.0.1:8267 -- python examples/transferqueue_job.py
-run a: exit 0, named actors: ['abec29f9-.../TransferQueueStorageUnit#0', 'transfer_queue/TransferQueueController']
-run b: exit 0, named actors: none
-SHARED: named actor 'TransferQueueController' in namespace transfer_queue was created only by run a; run b either attached to it or never created it
-SHARED: named actor 'TransferQueueStorageUnit#0' in namespace abec29f9-... was created only by run a; run b either attached to it or never created it
+run a: exit 0, named actors: none
+run a: open files under watched roots: none
+run b: exit 0, named actors: ['021c4204-.../TransferQueueStorageUnit#0', 'transfer_queue/TransferQueueController']
+run b: open files under watched roots: none
+SHARED: named actor 'TransferQueueController' in namespace transfer_queue was created only by run b; run a either attached to it or never created it
+SHARED: named actor 'TransferQueueStorageUnit#0' in namespace 021c4204-... was created only by run b; run a either attached to it or never created it
 
 $ ray-isolation-check ... -- sh -c 'TQ_RAY_NAMESPACE=queue-$ISOLATION_CHECK_RUN exec python examples/transferqueue_job.py'
-run a: exit 0, named actors: ['0de1b8ad-.../TransferQueueStorageUnit#0', 'queue-a/TransferQueueController']
-run b: exit 0, named actors: ['99656c8e-.../TransferQueueStorageUnit#0', 'queue-b/TransferQueueController']
+run a: exit 0, named actors: ['e8765b34-.../TransferQueueStorageUnit#0', 'queue-a/TransferQueueController']
+run a: open files under watched roots: none
+run b: exit 0, named actors: ['28ca6fa3-.../TransferQueueStorageUnit#0', 'queue-b/TransferQueueController']
+run b: open files under watched roots: none
 no shared named actors or files found
 ```
 
-Both runs exit 0 with the default, which is why the problem is easy to miss: run b silently uses run a's controller and storage. With a namespace per run, each creates its own.
+Both runs exit 0 with the default, which is why the problem is easy to miss: one run silently uses the other's controller and storage. Which run creates them depends on start-up timing. With a namespace per run, each creates its own.
 
 The smaller examples are what the tests run: `fixed_namespace_job.py` and `job_namespace_job.py` show the actor pattern without TransferQueue, and `fixed_path_job.py` keeps its state in a fixed temp directory.
 
